@@ -12,13 +12,18 @@ euler = Vector3()
 degree = Vector3()
 
 def CallBack(msg) :
-    theta = math.asin(msg.linear_acceleration.x / g)
-    phi = math.asin( -msg.linear_acceleration.y / (g*math.cos(theta)))
+    global theta, phi
+    _theta = msg.linear_acceleration.x / g
+    if abs(_theta) < 0.99 :
+        theta = math.asin(_theta)
+        _phi = -msg.linear_acceleration.y / (g*math.cos(theta))
+        if abs(_phi) < 0.99:
+            phi = math.asin(_phi)
 
     euler.x = phi
     euler.y = theta
     euler.z = 0
-    
+
 rospy.init_node("euler_accel")
 sub = rospy.Subscriber("mavros/imu/data_raw", Imu, CallBack)
 pub = rospy.Publisher("accel_to_euler", Vector3, queue_size = 10)
