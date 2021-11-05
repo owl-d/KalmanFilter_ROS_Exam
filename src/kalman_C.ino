@@ -52,21 +52,22 @@ int InverseMatrix3(double *m, double *mi){
 
 
 void create_A(double* gyro, double* A){
+  double dt=0.02;
   A[0] = 1;
-  A[1] = -0.01*gyro[0];
-  A[2] = -0.01*gyro[1];
-  A[3] = -0.01*gyro[2];
-  A[4] = 0.01*gyro[0];
+  A[1] = -dt/2*gyro[0];
+  A[2] = -dt/2*gyro[1];
+  A[3] = -dt/2*gyro[2];
+  A[4] = dt/2*gyro[0];
   A[5] = 1;
-  A[6] = 0.01*gyro[2];
-  A[7] = -0.01*gyro[1];
-  A[8] = 0.01*gyro[1];
-  A[9] = -0.01*gyro[2];
+  A[6] = dt/2*gyro[2];
+  A[7] = -dt/2*gyro[1];
+  A[8] = dt/2*gyro[1];
+  A[9] = -dt/2*gyro[2];
   A[10] = 1;
-  A[11] = 0.01*gyro[0];
-  A[12] = 0.01*gyro[2];
-  A[13] = 0.01*gyro[1];
-  A[14] = -0.01*gyro[0];
+  A[11] = dt/2*gyro[0];
+  A[12] = dt/2*gyro[2];
+  A[13] = dt/2*gyro[1];
+  A[14] = -dt/2*gyro[0];
   A[15] = 1;
 }
 
@@ -172,34 +173,14 @@ void loop()
     gyro[0] = mpu.gyroADC[ROLL]*0.00106;
     gyro[1] = mpu.gyroADC[PITCH]*0.00106;
     gyro[2] = mpu.gyroADC[YAW]*0.00106; // *3.14/180/16.4 = *0.00106
-//    Serial.print("gyro :");
-//    Serial.print(gyro[0], 5);
-//    Serial.print(" ");
-//    Serial.print(gyro[1], 5);
-//    Serial.print(" ");
-//    Serial.println(gyro[2], 5);
 
     acc[0] = mpu.accADC[ROLL]*0.0006;
     acc[1] = mpu.accADC[PITCH]*0.0006;
     acc[2] = mpu.accADC[YAW]*0.0006; //*9.8/16384
-//    Serial.print("acc :");
-//    Serial.print(acc[0], 5);
-//    Serial.print(" ");
-//    Serial.print(acc[1], 5);
-//    Serial.print(" ");
-//    Serial.println(acc[2], 5);
-    
     
 //    mag[0] = mpu.magADC[0]/4800; //*1200/4096=*0.293
 //    mag[1] = mpu.magADC[1]/4800;
 //    mag[2] = mpu.magADC[2]/4800;
-//    Serial.print("mag :");
-//    Serial.print(mag[0], 5);
-//    Serial.print(" ");
-//    Serial.print(mag[1], 5);
-//    Serial.print(" ");
-//    Serial.println(mag[2], 5);
-
 
     //Priori System Estimate : gyro
     create_A(gyro, A);
@@ -358,15 +339,6 @@ void loop()
     tfs_msg.transform.rotation.y = quat[2];
     tfs_msg.transform.rotation.z = quat[3];
 
-    Serial.print("quaternion : ");
-    Serial.print(quat[0]);
-    Serial.print(" ");
-    Serial.print(quat[1]);
-    Serial.print(" ");
-    Serial.print(quat[2]);
-    Serial.print(" ");
-    Serial.println(quat[3]);
-
 
     imu_msg.orientation.w = quat[0];
     imu_msg.orientation.x = quat[1];
@@ -380,11 +352,6 @@ void loop()
     tfs_msg.transform.translation.z = 0.0;
 
     tfbroadcaster.sendTransform(tfs_msg);
-
-    //calculation time
-//    long cal_time = micros()-c_time;
-//    Serial.print("calculate_time : ");
-//    Serial.println(cal_time, 9);
   }
 
   nh.spinOnce();
