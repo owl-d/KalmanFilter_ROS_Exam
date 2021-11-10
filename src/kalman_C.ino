@@ -345,6 +345,15 @@ void loop()
     imu_msg.orientation.y = quat[2];
     imu_msg.orientation.z = quat[3];
 
+    imu_msg.angular_velocity.x = gyro[0];
+    imu_msg.angular_velocity.y = gyro[1];
+    imu_msg.angular_velocity.z = gyro[2];
+    imu_msg.linear_acceleration.x = acc[0];
+    imu_msg.linear_acceleration.y = acc[1];
+    imu_msg.linear_acceleration.z = acc[2];
+
+    
+
     imu_pub.publish(&imu_msg);
 
     tfs_msg.transform.translation.x = 0.0;
