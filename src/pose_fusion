@@ -54,6 +54,7 @@ double V[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 double P[16] = {0.001, 0, 0, 0, 0, 0.001, 0, 0, 0, 0, 0.001, 0, 0, 0, 0, 0.001};
 double A[16];
 double K[12];
+double K2[16];
 double x[4] = {1, 0, 0, 0};
 double xp[4];
 double z1[3];
@@ -195,8 +196,8 @@ void setup()
   dxl.torqueOn(RIGHT_ID);
   dxl.writeControlTableItem(DRIVE_MODE, LEFT_ID, 0);
   dxl.writeControlTableItem(DRIVE_MODE, RIGHT_ID, 0);
-  dxl.setGoalVelocity(LEFT_ID, 20);
-  dxl.setGoalVelocity(RIGHT_ID, 20);
+  dxl.setGoalVelocity(LEFT_ID, 0);
+  dxl.setGoalVelocity(RIGHT_ID, 0);
   new_Lpos = dxl.getPresentPosition(LEFT_ID);
   new_Rpos = dxl.getPresentPosition(RIGHT_ID);
 }
@@ -344,7 +345,7 @@ void coordinate()
   matrix_dot(R_V, R_v, V, 3, 3, 3);
     
   double temp[9] = {Pp_H[0]+R_V[0], Pp_H[1]+R_V[1], Pp_H[2]+R_V[2], Pp_H[3]+R_V[3], Pp_H[4]+R_V[4], Pp_H[5]+R_V[5], Pp_H[6]+R_V[6], Pp_H[7]+R_V[7], Pp_H[8]+R_V[8]};
-    
+
   double inverse_temp[9];
   InverseMatrix3(temp, inverse_temp);
     
@@ -380,18 +381,21 @@ void coordinate()
     z2[2] = encoder_yaw_q[2];
     z2[3] = encoder_yaw_q[3];
 
-    matrix_dot(Pp_h, H2, Pp, 4, 4, 4);
-    matrix_dot(Pp_H, Pp_h, H2, 4, 4, 3);
+    double Pp_h2[16];
+    double Pp_H2[12];
+    matrix_dot(Pp_h2, H2, Pp, 4, 4, 4);
+    matrix_dot(Pp_H2, Pp_h2, H2, 4, 4, 3);
 
-    double temp2[16] = {Pp_H[0]+1, Pp_H[1], Pp_H[2], Pp_H[3], Pp_H[4]+1, Pp_H[5], Pp_H[6], Pp_H[7], Pp_H[8]+1, Pp_H[9]+1, Pp_H[10]+1, Pp_H[11]+1, Pp_H[12]+1, Pp_H[13]+1, Pp_H[14]+1, Pp_H[15]+1};
+    double temp2[16] = {Pp_H2[0]+1, Pp_H2[1], Pp_H2[2], Pp_H2[3], Pp_H2[4], Pp_H2[5]+1, Pp_H2[6], Pp_H2[7], Pp_H2[8], Pp_H2[9], Pp_H2[10]+1, Pp_H2[11], Pp_H2[12], Pp_H2[13], Pp_H2[14], Pp_H2[15]+1};
     double inverse_temp2[16];
-
     InverseMatrix4(temp2, inverse_temp2);
-    matrix_dot(H_ti, Pp, H2, 4, 4, 4);
-    matrix_dot(K, H_ti, inverse_temp2, 4, 4, 4);
+
+    double H_ti2[16];
+    matrix_dot(H_ti2, Pp, H2, 4, 4, 4);
+    matrix_dot(K2, H_ti2, inverse_temp2, 4, 4, 4);
     
     double qe2[4];
-    matrix_dot(qe2, K, z2, 4,4, 1);
+    matrix_dot(qe2, K2, z2, 4,4, 1);
     qe2[1] = 0;
     qe2[2] = 0;
     
@@ -400,7 +404,7 @@ void coordinate()
     x[2] = q1[2] + qe2[2];
     x[3] = q1[3] + qe2[3];
     
-    matrix_dot(K_h, K, H, 4, 4, 4);
+    matrix_dot(K_h, K2, H2, 4, 4, 4);
     I_Kh[0] = 1 - K_h[0];
     I_Kh[1] = -K_h[1];
     I_Kh[2] = -K_h[2];
@@ -481,5 +485,14 @@ void coordinate()
   imu_pub.publish(&imu_msg);
   pose_pub.publish(&pose_msg);
   tfbroadcaster.sendTransform(tfs_msg);
+
+  Serial.print(quat[0]);
+  Serial.print("  ");
+  Serial.print(quat[1]);
+  Serial.print("  ");
+  Serial.print(quat[2]);
+  Serial.print("  ");
+  Serial.print(quat[3]);
+  Serial.println("  ");
   
 }
