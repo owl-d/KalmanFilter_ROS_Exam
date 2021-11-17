@@ -21,8 +21,10 @@ float L_Vel;
 float R_Vel;
 float L_RPM;
 float R_RPM;
-float lin_Vel;
-float ang_Vel;
+double lin_Vel;
+double ang_Vel;
+double encoder_yaw = 0;
+double encoder_yaw_q[4];
 float present_Lpos;
 float present_Rpos;
 float new_Lpos;
@@ -45,6 +47,7 @@ double acc[3];
 double mag[3];
 double quat[4];
 double H[12];
+double H2[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 double Q[16] = {1e-6, 0, 0, 0, 0, 1e-6, 0, 0, 0, 0, 1e-6, 0, 0, 0, 0, 1e-6};
 double R[9] = {2, 0, 0, 0, 2, 0, 0, 0, 2};
 double V[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
@@ -54,7 +57,7 @@ double K[12];
 double x[4] = {1, 0, 0, 0};
 double xp[4];
 double z1[3];
-double z2[3];
+double z2[4];
 double h[3];
 double yaw = 0;
 double dt = 0.02;
@@ -111,6 +114,41 @@ int InverseMatrix3(double *m, double *mi){
 
 }
 
+int InverseMatrix4(double *A, double *A_I
+){
+  double def;
+
+  def = A[0]*A[5]*A[10]*A[15] + A[0]*A[6]*A[11]*A[13] + A[0]*A[7]*A[9]*A[14] 
+  - A[0]*A[7]*A[10]*A[13] - A[0]*A[6]*A[9]*A[15] - A[0]*A[5]*A[11]*A[14] 
+  - A[1]*A[4]*A[10]*A[15] - A[2]*A[4]*A[11]*A[13] - A[3]*A[4]*A[9]*A[14] 
+  + A[3]*A[4]*A[10]*A[13] + A[2]*A[4]*A[9]*A[15] + A[1]*A[4]*A[11]*A[14] 
+  + A[1]*A[6]*A[8]*A[15] + A[2]*A[7]*A[8]*A[13] + A[3]*A[5]*A[8]*A[14]
+  - A[3]*A[6]*A[8]*A[13] - A[2]*A[5]*A[8]*A[15] - A[1]*A[7]*A[8]*A[14]
+  - A[1]*A[6]*A[11]*A[12] - A[2]*A[7]*A[9]*A[12] - A[3]*A[5]*A[10]*A[12] 
+  + A[3]*A[6]*A[9]*A[12] + A[2]*A[5]*A[11]*A[12] + A[1]*A[7]*A[10]*A[12];
+
+  if (def==0)return 0;
+  
+  A_I[0] = {(A[5]*A[10]*A[15] + A[6]*A[11]*A[13] + A[7]*A[9]*A[14] - A[7]*A[10]*A[13] - A[6]*A[9]*A[15] - A[5]*A[11]*A[14])/def};
+  A_I[1] = {((-1)*(A[1]*A[10]*A[15]) - A[2]*A[11]*A[13] - A[3]*A[9]*A[14] + A[3]*A[10]*A[13] + A[2]*A[9]*A[15] + A[1]*A[11]*A[14])/def};
+  A_I[2] = {(A[1]*A[6]*A[15] + A[2]*A[7]*A[13] + A[3]*A[5]*A[14] - A[3]*A[6]*A[13] - A[2]*A[5]*A[15] - A[1]*A[7]*A[14])/def};
+  A_I[3] = {((-1)*(A[1]*A[6]*A[11]) - A[2]*A[7]*A[9] - A[3]*A[5]*A[10] + A[3]*A[6]*A[9] + A[2]*A[5]*A[11] + A[1]*A[7]*A[10])/def};
+  A_I[4] = {((-1)*(A[4]*A[10]*A[15]) - A[6]*A[11]*A[12] - A[7]*A[8]*A[14] + A[7]*A[10]*A[12] + A[6]*A[8]*A[15] + A[4]*A[11]*A[14])/def};
+  A_I[5] = {(A[0]*A[10]*A[15] + A[2]*A[11]*A[12] + A[3]*A[8]*A[14] - A[3]*A[10]*A[12] - A[2]*A[8]*A[15] - A[0]*A[11]*A[14])/def};
+  A_I[6] = {((-1)*(A[0]*A[6]*A[15]) - A[2]*A[7]*A[12] - A[3]*A[4]*A[14] + A[3]*A[6]*A[12] + A[2]*A[4]*A[15] + A[0]*A[7]*A[14])/def};
+  A_I[7] = {(A[0]*A[6]*A[11] + A[2]*A[7]*A[8] + A[3]*A[4]*A[10] - A[3]*A[6]*A[8] - A[2]*A[4]*A[11] - A[0]*A[7]*A[10])/def};
+  A_I[8] = {(A[4]*A[9]*A[15] + A[5]*A[11]*A[12] + A[7]*A[8]*A[13] - A[7]*A[9]*A[12] - A[5]*A[8]*A[15] - A[4]*A[11]*A[13])/def};
+  A_I[9] = {((-1)*(A[0]*A[9]*A[15]) - A[1]*A[11]*A[12] - A[3]*A[8]*A[13] + A[3]*A[9]*A[12] + A[1]*A[8]*A[15] + A[0]*A[11]*A[13])/def};
+  A_I[10] = {(A[0]*A[5]*A[15] + A[1]*A[7]*A[12] + A[3]*A[4]*A[13] - A[3]*A[5]*A[12] - A[1]*A[4]*A[15] - A[0]*A[7]*A[13])/def};
+  A_I[11] = {((-1)*(A[0]*A[5]*A[11]) - A[1]*A[7]*A[8] - A[3]*A[4]*A[9] + A[3]*A[5]*A[8] + A[1]*A[4]*A[11] + A[0]*A[7]*A[9])/def};
+  A_I[12] = {((-1)*(A[4]*A[9]*A[14]) - A[5]*A[10]*A[12] - A[6]*A[8]*A[13] + A[6]*A[9]*A[12] + A[5]*A[8]*A[14] + A[4]*A[10]*A[13])/def};
+  A_I[13] = {(A[0]*A[9]*A[14] + A[1]*A[10]*A[12] + A[2]*A[8]*A[13] - A[2]*A[9]*A[12] - A[1]*A[8]*A[14] - A[0]*A[10]*A[13])/def};
+  A_I[14] = {((-1)*(A[0]*A[5]*A[14]) - A[1]*A[6]*A[12] - A[2]*A[4]*A[13] + A[2]*A[5]*A[12] + A[1]*A[4]*A[14] + A[0]*A[6]*A[13])/def};
+  A_I[15] = {(A[0]*A[5]*A[10] + A[1]*A[6]*A[8] + A[2]*A[4]*A[9] - A[2]*A[5]*A[8] - A[1]*A[4]*A[10] - A[0]*A[6]*A[9])/def};
+
+  return 1;
+}
+
 
 void create_A(double* gyro, double* A){
   A[0] = 1;
@@ -157,8 +195,8 @@ void setup()
   dxl.torqueOn(RIGHT_ID);
   dxl.writeControlTableItem(DRIVE_MODE, LEFT_ID, 0);
   dxl.writeControlTableItem(DRIVE_MODE, RIGHT_ID, 0);
-  dxl.setGoalVelocity(LEFT_ID, 10);
-  dxl.setGoalVelocity(RIGHT_ID, 10);
+  dxl.setGoalVelocity(LEFT_ID, 20);
+  dxl.setGoalVelocity(RIGHT_ID, 20);
   new_Lpos = dxl.getPresentPosition(LEFT_ID);
   new_Rpos = dxl.getPresentPosition(RIGHT_ID);
 }
@@ -185,11 +223,17 @@ void coordinate()
   R_Vel = 2 * 3.141592 * 0.066 * R_RPM / 60;
   lin_Vel = (L_Vel + R_Vel) /2; //linear_velocity
   ang_Vel = (R_Vel - L_Vel) /0.16 /0.066 ; //angular_velocity
-  DEBUG_SERIAL.print("Robot's Linear Velocity(m/s) : ");
-  DEBUG_SERIAL.print(lin_Vel);
-  DEBUG_SERIAL.print(" , ");
-  DEBUG_SERIAL.print("Robot's Angualr Velocity(rad/s) : ");
-  DEBUG_SERIAL.println(ang_Vel);
+  encoder_yaw += ang_Vel*dt;
+  encoder_yaw_q[0] = cos(0) * cos(0) * cos(encoder_yaw/2) + sin(0) * sin(0) * sin(encoder_yaw/2);
+  encoder_yaw_q[1] = sin(0) * cos(0) * cos(encoder_yaw/2) - cos(0) * sin(0) * sin(encoder_yaw/2);
+  encoder_yaw_q[2] = cos(0) * sin(0) * cos(encoder_yaw/2) + sin(0) * cos(0) * sin(encoder_yaw/2);
+  encoder_yaw_q[3] = cos(0) * cos(0) * sin(encoder_yaw/2) - sin(0) * sin(0) * cos(encoder_yaw/2);
+
+//  DEBUG_SERIAL.print("Robot's Linear Velocity(m/s) : ");
+//  DEBUG_SERIAL.print(lin_Vel);
+//  DEBUG_SERIAL.print(" , ");
+//  DEBUG_SERIAL.print("Robot's Angualr Velocity(rad/s) : ");
+//  DEBUG_SERIAL.println(ang_Vel);
   dif_Lpos = present_Lpos - new_Lpos;
   dif_Rpos = present_Rpos - new_Rpos;
   dis_L = dif_Lpos * 0.00002 * 2.54;
@@ -200,17 +244,17 @@ void coordinate()
   dxl_new_y = cos(deg) * dis;
   dxl_x += dxl_new_x; //position_x
   dxl_y += dxl_new_y; //position_y
-  DEBUG_SERIAL.print("x-coordinate : ");
-  DEBUG_SERIAL.print(dxl_x);
-  DEBUG_SERIAL.print(" , ");
-  DEBUG_SERIAL.print("y-coordinate : ");
-  DEBUG_SERIAL.println(dxl_y);
+//  DEBUG_SERIAL.print("x-coordinate : ");
+//  DEBUG_SERIAL.print(dxl_x);
+//  DEBUG_SERIAL.print(" , ");
+//  DEBUG_SERIAL.print("y-coordinate : ");
+//  DEBUG_SERIAL.println(dxl_y);
   new_Lpos = dxl.getPresentPosition(LEFT_ID);
   new_Rpos = dxl.getPresentPosition(RIGHT_ID);
   
+  
   mpu.gyro_get_adc();
   mpu.acc_get_adc();
-  mpu.mag_get_adc();
 
   imu_msg.angular_velocity_covariance[0] = 1.2184696791468346e-07;
   imu_msg.angular_velocity_covariance[1] = 0;
@@ -251,10 +295,6 @@ void coordinate()
   acc[0] = mpu.accADC[ROLL]*0.0006;
   acc[1] = mpu.accADC[PITCH]*0.0006;
   acc[2] = mpu.accADC[YAW]*0.0006; //*9.8/16384
-    
-//    mag[0] = mpu.magADC[0]/4800; //*1200/4096=*0.293
-//    mag[1] = mpu.magADC[1]/4800;
-//    mag[2] = mpu.magADC[2]/4800;
 
   //Priori System Estimate : gyro
   create_A(gyro, A);
@@ -316,12 +356,12 @@ void coordinate()
   double qe1[4];
   matrix_dot(qe1, K, z1_h, 4, 3, 1);
   qe1[3] = 0;
-//    double q1[4] ={ xp[0] + qe1[0], xp[1] + qe1[1], xp[2] + qe1[2], xp[3] + qe1[3]};
+  double q1[4] ={ xp[0] + qe1[0], xp[1] + qe1[1], xp[2] + qe1[2], xp[3] + qe1[3]};
 
-  x[0] = xp[0] + qe1[0];
-  x[1] = xp[1] + qe1[1];
-  x[2] = xp[2] + qe1[2];
-  x[3] = xp[3] + qe1[3];
+//  x[0] = xp[0] + qe1[0];
+//  x[1] = xp[1] + qe1[1];
+//  x[2] = xp[2] + qe1[2];
+//  x[3] = xp[3] + qe1[3];
 
     
 
@@ -330,73 +370,55 @@ void coordinate()
   double I_Kh[16] = { 1 - K_h[0], -K_h[1], -K_h[2], -K_h[3], -K_h[4], 1 - K_h[5], -K_h[6], -K_h[7], -K_h[8], -K_h[9], 1 - K_h[10], -K_h[11], -K_h[12], -K_h[13], -K_h[14], 1 - K_h[15]};
     
   double P1[16];
-//    matrix_dot(P1, I_Kh, Pp, 4, 4, 4);
-  matrix_dot(P, I_Kh, Pp, 4, 4, 4);
+  matrix_dot(P1, I_Kh, Pp, 4, 4, 4);
+//  matrix_dot(P, I_Kh, Pp, 4, 4, 4);
 
     
-//    //Correction Stage2 : with mag
-//    H[0] = 2*x[3];
-//    H[1] = 2*x[2];
-//    H[2] = 2*x[1];
-//    H[3] = 2*x[0];
-//    H[4] = 2*x[0];
-//    H[5] = -2*x[1];
-//    H[6] = -2*x[2];
-//    H[7] = -2*x[3];
-//    H[8] = -2*x[1];
-//    H[9] = -2*x[0];
-//    H[10] = 2*x[3];
-//    H[11] = 2*x[2];
-//        
-//    h[0] = 2*x[1]*x[2] + 2*x[0]*x[3];
-//    h[1] = x[0]*x[0] - x[1]*x[1] - x[2]*x[2] - x[3]*x[3];
-//    h[2] = 2*x[2]*x[3] - 2*x[0]*x[1];
-//    
-//    z2[0] = mag[0];
-//    z2[1] = mag[1];
-//    z2[2] = mag[2];
-//
-//    matrix_dot(Pp_h, H, Pp, 3, 4, 4);
-//    double H_T2[12]={ H[0], H[4], H[8], H[1], H[5], H[9], H[2], H[6], H[10], H[3], H[7], H[11]};
-//    matrix_dot(Pp_H, Pp_h, H_T2, 3, 4, 3);
-//
-//    double temp2[9] = {Pp_H[0]+1, Pp_H[1], Pp_H[2], Pp_H[3], Pp_H[4]+1, Pp_H[5], Pp_H[6], Pp_H[7], Pp_H[8]+1};
-//    double inverse_temp2[9];
-//
-//    InverseMatrix3(temp2, inverse_temp2);
-//    matrix_dot(H_ti, Pp, H_T2, 4, 4, 3);
-//    matrix_dot(K, H_ti, inverse_temp2, 4, 3, 3);
-//    
-//    double z2_h[3] = {z2[0]-h[0], z2[1]-h[1], z2[2]-h[2]};
-//    double qe2[4];
-//    matrix_dot(qe2, K, z2_h, 4, 3, 1);
-//    qe2[1] = 0;
-//    qe2[2] = 0;
-//    
-//    x[0] = q1[0] + qe2[0];
-//    x[1] = q1[1] + qe2[1];
-//    x[2] = q1[2] + qe2[2];
-//    x[3] = q1[3] + qe2[3];
-//    
-//    matrix_dot(K_h, K, H, 4, 3, 4);
-//    I_Kh[0] = 1 - K_h[0];
-//    I_Kh[1] = -K_h[1];
-//    I_Kh[2] = -K_h[2];
-//    I_Kh[3] = -K_h[3];
-//    I_Kh[4] = -K_h[4];
-//    I_Kh[5] = 1 - K_h[5];
-//    I_Kh[6] = -K_h[6];
-//    I_Kh[7] = -K_h[7];
-//    I_Kh[8] = -K_h[8];
-//    I_Kh[9] = -K_h[9];
-//    I_Kh[10] = 1 - K_h[10];
-//    I_Kh[11] = -K_h[11];
-//    I_Kh[12] = -K_h[12];
-//    I_Kh[13] = -K_h[13];
-//    I_Kh[14] = -K_h[14];
-//    I_Kh[15] = 1 - K_h[15];
-//  
-//    matrix_dot(P, P1, I_Kh, 4, 4, 4);
+//    Correction Stage2 : with Encoder's yaw    
+    z2[0] = encoder_yaw_q[0];
+    z2[1] = encoder_yaw_q[1];
+    z2[2] = encoder_yaw_q[2];
+    z2[3] = encoder_yaw_q[3];
+
+    matrix_dot(Pp_h, H2, Pp, 4, 4, 4);
+    matrix_dot(Pp_H, Pp_h, H2, 4, 4, 3);
+
+    double temp2[16] = {Pp_H[0]+1, Pp_H[1], Pp_H[2], Pp_H[3], Pp_H[4]+1, Pp_H[5], Pp_H[6], Pp_H[7], Pp_H[8]+1, Pp_H[9]+1, Pp_H[10]+1, Pp_H[11]+1, Pp_H[12]+1, Pp_H[13]+1, Pp_H[14]+1, Pp_H[15]+1};
+    double inverse_temp2[16];
+
+    InverseMatrix4(temp2, inverse_temp2);
+    matrix_dot(H_ti, Pp, H2, 4, 4, 4);
+    matrix_dot(K, H_ti, inverse_temp2, 4, 4, 4);
+    
+    double qe2[4];
+    matrix_dot(qe2, K, z2, 4,4, 1);
+    qe2[1] = 0;
+    qe2[2] = 0;
+    
+    x[0] = q1[0] + qe2[0];
+    x[1] = q1[1] + qe2[1];
+    x[2] = q1[2] + qe2[2];
+    x[3] = q1[3] + qe2[3];
+    
+    matrix_dot(K_h, K, H, 4, 4, 4);
+    I_Kh[0] = 1 - K_h[0];
+    I_Kh[1] = -K_h[1];
+    I_Kh[2] = -K_h[2];
+    I_Kh[3] = -K_h[3];
+    I_Kh[4] = -K_h[4];
+    I_Kh[5] = 1 - K_h[5];
+    I_Kh[6] = -K_h[6];
+    I_Kh[7] = -K_h[7];
+    I_Kh[8] = -K_h[8];
+    I_Kh[9] = -K_h[9];
+    I_Kh[10] = 1 - K_h[10];
+    I_Kh[11] = -K_h[11];
+    I_Kh[12] = -K_h[12];
+    I_Kh[13] = -K_h[13];
+    I_Kh[14] = -K_h[14];
+    I_Kh[15] = 1 - K_h[15];
+  
+    matrix_dot(P, I_Kh, P1, 4, 4, 4);
 
   double Q_abs = sqrt(x[0]*x[0] + x[1]*x[1] + x[2]*x[2] + x[3]*x[3]);
   quat[0] = x[0]/Q_abs;
@@ -405,7 +427,7 @@ void coordinate()
   quat[3] = x[3]/Q_abs;
 
 
-  //position estimation
+  //IMU position estimation
   double siny_cosp = 2 * (quat[0] * quat[3] + quat[1] * quat[2]);
   double cosy_cosp = 1 - 2 * (quat[2] * quat[2] + quat[3] * quat[3]);
   yaw = atan2(siny_cosp, cosy_cosp); // yaw (z-axis rotation)
@@ -420,6 +442,8 @@ void coordinate()
   local_p_x += local_v_x*dt;
   local_p_y += local_v_y*dt; //position
 
+
+//  Publish
   imu_msg.header.stamp = nh.now();
   imu_msg.header.frame_id = "imu_link";
   imu_msg.orientation.w = quat[0];
@@ -437,8 +461,6 @@ void coordinate()
   pose_msg.header.frame_id = "map";
   pose_msg.pose.position.x = dxl_x;
   pose_msg.pose.position.y = dxl_y;
-//  pose_msg.pose.position.x = 1;
-//  pose_msg.pose.position.y = 1;
   pose_msg.pose.position.z = 0;
   pose_msg.pose.orientation.w = quat[0];
   pose_msg.pose.orientation.x = quat[1];
