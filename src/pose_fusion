@@ -11,7 +11,13 @@ cMPU9250 mpu;
 
 #define DXL_SERIAL Serial3
 #define DEBUG_SERIAL Serial
+
+///////////////////////////////////////
+const uint8_t GOAL_VEL = 10;
 const uint8_t PERIOD = 20;
+double dt = 0.02;
+///////////////////////////////////////
+
 const uint8_t DXL_DIR_PIN = 84;
 const uint8_t RIGHT_ID = 1;
 const uint8_t LEFT_ID = 2;
@@ -22,6 +28,7 @@ float R_Vel;
 float L_RPM;
 float R_RPM;
 double lin_Vel;
+double lin_Vel_pre = 0;
 double ang_Vel;
 double encoder_yaw = 0;
 double encoder_yaw_q[4];
@@ -46,22 +53,29 @@ double gyro[3];
 double acc[3];
 double mag[3];
 double quat[4];
+double pos[4] = {0, 0, 0, 0};
+double posp[4];
 double H[12];
 double H2[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+double H3[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 double Q[16] = {1e-6, 0, 0, 0, 0, 1e-6, 0, 0, 0, 0, 1e-6, 0, 0, 0, 0, 1e-6};
 double R[9] = {2, 0, 0, 0, 2, 0, 0, 0, 2};
+double R3[16] = {2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2};
 double V[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+double V3[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 double P[16] = {0.001, 0, 0, 0, 0, 0.001, 0, 0, 0, 0, 0.001, 0, 0, 0, 0, 0.001};
+double P3[16];
 double A[16];
 double K[12];
 double K2[16];
+double K3[16];
 double x[4] = {1, 0, 0, 0};
 double xp[4];
 double z1[3];
 double z2[4];
+double z3[4];
 double h[3];
 double yaw = 0;
-double dt = 0.02;
 double local_acc_x = 0;
 double local_acc_y = 0;
 double body_v_x = 0;
@@ -196,8 +210,8 @@ void setup()
   dxl.torqueOn(RIGHT_ID);
   dxl.writeControlTableItem(DRIVE_MODE, LEFT_ID, 0);
   dxl.writeControlTableItem(DRIVE_MODE, RIGHT_ID, 0);
-  dxl.setGoalVelocity(LEFT_ID, 0);
-  dxl.setGoalVelocity(RIGHT_ID, 0);
+  dxl.setGoalVelocity(LEFT_ID, 10);
+  dxl.setGoalVelocity(RIGHT_ID, 10);
   new_Lpos = dxl.getPresentPosition(LEFT_ID);
   new_Rpos = dxl.getPresentPosition(RIGHT_ID);
 }
@@ -213,6 +227,7 @@ void loop()
   }
   nh.spinOnce();
 }
+
 
 void coordinate()
 {
@@ -230,11 +245,7 @@ void coordinate()
   encoder_yaw_q[2] = cos(0) * sin(0) * cos(encoder_yaw/2) + sin(0) * cos(0) * sin(encoder_yaw/2);
   encoder_yaw_q[3] = cos(0) * cos(0) * sin(encoder_yaw/2) - sin(0) * sin(0) * cos(encoder_yaw/2);
 
-//  DEBUG_SERIAL.print("Robot's Linear Velocity(m/s) : ");
-//  DEBUG_SERIAL.print(lin_Vel);
-//  DEBUG_SERIAL.print(" , ");
-//  DEBUG_SERIAL.print("Robot's Angualr Velocity(rad/s) : ");
-//  DEBUG_SERIAL.println(ang_Vel);
+
   dif_Lpos = present_Lpos - new_Lpos;
   dif_Rpos = present_Rpos - new_Rpos;
   dis_L = dif_Lpos * 0.00002 * 2.54;
@@ -297,7 +308,7 @@ void coordinate()
   acc[1] = mpu.accADC[PITCH]*0.0006;
   acc[2] = mpu.accADC[YAW]*0.0006; //*9.8/16384
 
-  //Priori System Estimate : gyro
+  //Orientation Priori System Estimate : gyro
   create_A(gyro, A);
   matrix_dot(xp, A, x, 4, 4, 1);
   double Pp_a[16];
@@ -307,7 +318,7 @@ void coordinate()
   matrix_dot(Pp_A, Pp_a, A_T, 4, 4, 4);
   double Pp[16] = {Pp_A[0]+Q[0], Pp_A[1]+Q[1], Pp_A[2]+Q[2], Pp_A[3]+Q[3], Pp_A[4]+Q[4], Pp_A[5]+Q[5], Pp_A[6]+Q[6], Pp_A[7]+Q[7], Pp_A[8]+Q[8], Pp_A[9]+Q[9], Pp_A[10]+Q[10], Pp_A[11]+Q[11], Pp_A[12]+Q[12], Pp_A[13]+Q[13], Pp_A[14]+Q[14], Pp_A[15]+Q[15]};
 
-  //Correction Stage1 : with acc
+  //Orientation Correction Stage1 : with acc
   H[0] = -2*x[2];
   H[1] = 2*x[3];
   H[2] = -2*x[0];
@@ -332,13 +343,11 @@ void coordinate()
   z1[1] = acc[1];
   z1[2] = acc[2];
 
-  //Kalman gain
   double H_T[12]={ H[0], H[4], H[8], H[1], H[5], H[9], H[2], H[6], H[10], H[3], H[7], H[11]};
   double Pp_h[12];
   matrix_dot(Pp_h, H, Pp, 3, 4, 4);
   double Pp_H[9];
   matrix_dot(Pp_H, Pp_h, H_T, 3, 4, 3);
-
   double R_v[9];
   matrix_dot(R_v, V, R, 3, 3, 3);
   double R_V[9];
@@ -359,70 +368,62 @@ void coordinate()
   qe1[3] = 0;
   double q1[4] ={ xp[0] + qe1[0], xp[1] + qe1[1], xp[2] + qe1[2], xp[3] + qe1[3]};
 
-//  x[0] = xp[0] + qe1[0];
-//  x[1] = xp[1] + qe1[1];
-//  x[2] = xp[2] + qe1[2];
-//  x[3] = xp[3] + qe1[3];
-
-    
-
   double K_h[16];
   matrix_dot(K_h, K, H, 4, 3, 4);
   double I_Kh[16] = { 1 - K_h[0], -K_h[1], -K_h[2], -K_h[3], -K_h[4], 1 - K_h[5], -K_h[6], -K_h[7], -K_h[8], -K_h[9], 1 - K_h[10], -K_h[11], -K_h[12], -K_h[13], -K_h[14], 1 - K_h[15]};
     
   double P1[16];
   matrix_dot(P1, I_Kh, Pp, 4, 4, 4);
-//  matrix_dot(P, I_Kh, Pp, 4, 4, 4);
 
     
-//    Correction Stage2 : with Encoder's yaw    
-    z2[0] = encoder_yaw_q[0];
-    z2[1] = encoder_yaw_q[1];
-    z2[2] = encoder_yaw_q[2];
-    z2[3] = encoder_yaw_q[3];
+  //Orientation Correction Stage2 : with Encoder's yaw    
+  z2[0] = encoder_yaw_q[0];
+  z2[1] = encoder_yaw_q[1];
+  z2[2] = encoder_yaw_q[2];
+  z2[3] = encoder_yaw_q[3];
 
-    double Pp_h2[16];
-    double Pp_H2[12];
-    matrix_dot(Pp_h2, H2, Pp, 4, 4, 4);
-    matrix_dot(Pp_H2, Pp_h2, H2, 4, 4, 3);
+  double Pp_h2[16];
+  double Pp_H2[12];
+  matrix_dot(Pp_h2, H2, Pp, 4, 4, 4);
+  matrix_dot(Pp_H2, Pp_h2, H2, 4, 4, 3);
 
-    double temp2[16] = {Pp_H2[0]+1, Pp_H2[1], Pp_H2[2], Pp_H2[3], Pp_H2[4], Pp_H2[5]+1, Pp_H2[6], Pp_H2[7], Pp_H2[8], Pp_H2[9], Pp_H2[10]+1, Pp_H2[11], Pp_H2[12], Pp_H2[13], Pp_H2[14], Pp_H2[15]+1};
-    double inverse_temp2[16];
-    InverseMatrix4(temp2, inverse_temp2);
+  double temp2[16] = {Pp_H2[0]+1, Pp_H2[1], Pp_H2[2], Pp_H2[3], Pp_H2[4], Pp_H2[5]+1, Pp_H2[6], Pp_H2[7], Pp_H2[8], Pp_H2[9], Pp_H2[10]+1, Pp_H2[11], Pp_H2[12], Pp_H2[13], Pp_H2[14], Pp_H2[15]+1};
+  double inverse_temp2[16];
+  InverseMatrix4(temp2, inverse_temp2);
 
-    double H_ti2[16];
-    matrix_dot(H_ti2, Pp, H2, 4, 4, 4);
-    matrix_dot(K2, H_ti2, inverse_temp2, 4, 4, 4);
+  double H_ti2[16];
+  matrix_dot(H_ti2, Pp, H2, 4, 4, 4);
+  matrix_dot(K2, H_ti2, inverse_temp2, 4, 4, 4);
     
-    double qe2[4];
-    matrix_dot(qe2, K2, z2, 4,4, 1);
-    qe2[1] = 0;
-    qe2[2] = 0;
+  double qe2[4];
+  matrix_dot(qe2, K2, z2, 4,4, 1);
+  qe2[1] = 0;
+  qe2[2] = 0;
     
-    x[0] = q1[0] + qe2[0];
-    x[1] = q1[1] + qe2[1];
-    x[2] = q1[2] + qe2[2];
-    x[3] = q1[3] + qe2[3];
-    
-    matrix_dot(K_h, K2, H2, 4, 4, 4);
-    I_Kh[0] = 1 - K_h[0];
-    I_Kh[1] = -K_h[1];
-    I_Kh[2] = -K_h[2];
-    I_Kh[3] = -K_h[3];
-    I_Kh[4] = -K_h[4];
-    I_Kh[5] = 1 - K_h[5];
-    I_Kh[6] = -K_h[6];
-    I_Kh[7] = -K_h[7];
-    I_Kh[8] = -K_h[8];
-    I_Kh[9] = -K_h[9];
-    I_Kh[10] = 1 - K_h[10];
-    I_Kh[11] = -K_h[11];
-    I_Kh[12] = -K_h[12];
-    I_Kh[13] = -K_h[13];
-    I_Kh[14] = -K_h[14];
-    I_Kh[15] = 1 - K_h[15];
+  x[0] = q1[0] + qe2[0];
+  x[1] = q1[1] + qe2[1];
+  x[2] = q1[2] + qe2[2];
+  x[3] = q1[3] + qe2[3];
   
-    matrix_dot(P, I_Kh, P1, 4, 4, 4);
+  matrix_dot(K_h, K2, H2, 4, 4, 4);
+  I_Kh[0] = 1 - K_h[0];
+  I_Kh[1] = -K_h[1];
+  I_Kh[2] = -K_h[2];
+  I_Kh[3] = -K_h[3];
+  I_Kh[4] = -K_h[4];
+  I_Kh[5] = 1 - K_h[5];
+  I_Kh[6] = -K_h[6];
+  I_Kh[7] = -K_h[7];
+  I_Kh[8] = -K_h[8];
+  I_Kh[9] = -K_h[9];
+  I_Kh[10] = 1 - K_h[10];
+  I_Kh[11] = -K_h[11];
+  I_Kh[12] = -K_h[12];
+  I_Kh[13] = -K_h[13];
+  I_Kh[14] = -K_h[14];
+  I_Kh[15] = 1 - K_h[15];
+  
+  matrix_dot(P, I_Kh, P1, 4, 4, 4);
 
   double Q_abs = sqrt(x[0]*x[0] + x[1]*x[1] + x[2]*x[2] + x[3]*x[3]);
   quat[0] = x[0]/Q_abs;
@@ -435,8 +436,6 @@ void coordinate()
   double siny_cosp = 2 * (quat[0] * quat[3] + quat[1] * quat[2]);
   double cosy_cosp = 1 - 2 * (quat[2] * quat[2] + quat[3] * quat[3]);
   yaw = atan2(siny_cosp, cosy_cosp); // yaw (z-axis rotation)
-//    Serial.println(yaw*180/PI);
-
   local_acc_x = cos(yaw)*acc[0] - sin(yaw)*acc[1];
   local_acc_y = sin(yaw)*acc[0] + cos(yaw)*acc[1];
   body_v_x += acc[0]*dt;
@@ -447,7 +446,58 @@ void coordinate()
   local_p_y += local_v_y*dt; //position
 
 
-//  Publish
+  //Position Priori System Estimate : Encoder
+  double A3[16] = {1, 0, dt, dt*dt/2, 0 , 1, 0, 0, 0, 0, 1, dt, 0, 0, 0, 1};
+  matrix_dot(posp, A3, pos, 4, 4, 1);
+  double Pp_a3[16];
+  matrix_dot(Pp_a3, A3, P3, 4, 4, 4);
+  double A_T3[16] = {A3[0], A3[4], A3[8], A3[12], A3[1], A3[5], A3[9], A3[13], A3[2], A3[6], A3[10], A3[14], A3[3], A3[7], A3[11], A3[15]};
+  double Pp_A3[16];
+  matrix_dot(Pp_A3, Pp_a3, A_T3, 4, 4, 4);
+  double Pp3[16] = {Pp_A3[0]+Q[0], Pp_A3[1]+Q[1], Pp_A3[2]+Q[2], Pp_A3[3]+Q[3], Pp_A3[4]+Q[4], Pp_A3[5]+Q[5], Pp_A3[6]+Q[6], Pp_A3[7]+Q[7], Pp_A3[8]+Q[8], Pp_A3[9]+Q[9], Pp_A3[10]+Q[10], Pp_A3[11]+Q[11], Pp_A3[12]+Q[12], Pp_A3[13]+Q[13], Pp_A3[14]+Q[14], Pp_A3[15]+Q[15]};
+  
+  //Position Correction Stage : with IMU position
+  z3[0] = dxl_x;
+  z3[1] = dxl_y;
+  z3[2] = lin_Vel;
+  z3[3] = (lin_Vel - lin_Vel_pre)*dt;
+  lin_Vel_pre = lin_Vel;
+
+  double Pp_h3[16];
+  matrix_dot(Pp_h3, H3, Pp3, 4, 4, 4);
+  double Pp_H3[16];
+  matrix_dot(Pp_H3, Pp_h3, H3, 4, 4, 4);
+
+  double R_v3[16];
+  matrix_dot(R_v3, V3, R3, 4, 4, 4);
+  double R_V3[16];
+  matrix_dot(R_V3, R_v3, V3, 3, 3, 3);
+    
+  double temp3[16] = {Pp_H3[0]+R_V3[0], Pp_H3[1]+R_V3[1], Pp_H3[2]+R_V3[2], Pp_H3[3]+R_V3[3], Pp_H3[4]+R_V3[4], Pp_H3[5]+R_V3[5], Pp_H3[6]+R_V3[6], Pp_H3[7]+R_V3[7], Pp_H3[8]+R_V3[8], Pp_H3[9]+R_V3[9], Pp_H3[10]+R_V3[10], Pp_H3[11]+R_V3[11], Pp_H3[12]+R_V3[12], Pp_H3[13]+R_V3[13], Pp_H3[14]+R_V3[14], Pp_H3[15]+R_V3[15]};
+
+  double inverse_temp3[16];
+  InverseMatrix4(temp3, inverse_temp3);
+    
+  double H_ti3[12];
+  matrix_dot(H_ti3, Pp3, H3, 4, 4, 4);
+  matrix_dot(K3, H_ti3, inverse_temp3, 4, 4, 4);
+    
+  double qe3[4];
+  matrix_dot(qe3, K3, z3, 4, 4, 1);
+  pos[0] = posp[0] + qe3[0];
+  pos[1] = posp[1] + qe3[1];
+  pos[2] = posp[2] + qe3[2];
+  pos[3] = posp[3] + qe3[3];
+
+  double K_h3[16];
+  matrix_dot(K_h3, K3, H3, 4, 4, 4);
+  double I_Kh3[16] = { 1 - K_h3[0], -K_h3[1], -K_h3[2], -K_h3[3], -K_h3[4], 1 - K_h3[5], -K_h3[6], -K_h3[7], -K_h3[8], -K_h3[9], 1 - K_h3[10], -K_h3[11], -K_h3[12], -K_h3[13], -K_h3[14], 1 - K_h3[15]};
+    
+  double P3[16];
+  matrix_dot(P3, I_Kh3, Pp3, 4, 4, 4);
+
+
+  //Publish
   imu_msg.header.stamp = nh.now();
   imu_msg.header.frame_id = "imu_link";
   imu_msg.orientation.w = quat[0];
@@ -463,8 +513,8 @@ void coordinate()
 
   pose_msg.header.stamp = nh.now();
   pose_msg.header.frame_id = "map";
-  pose_msg.pose.position.x = dxl_x;
-  pose_msg.pose.position.y = dxl_y;
+  pose_msg.pose.position.x = pos[0];
+  pose_msg.pose.position.y = pos[1];
   pose_msg.pose.position.z = 0;
   pose_msg.pose.orientation.w = quat[0];
   pose_msg.pose.orientation.x = quat[1];
@@ -486,13 +536,8 @@ void coordinate()
   pose_pub.publish(&pose_msg);
   tfbroadcaster.sendTransform(tfs_msg);
 
-  Serial.print(quat[0]);
+  Serial.print(pos[0]);
   Serial.print("  ");
-  Serial.print(quat[1]);
-  Serial.print("  ");
-  Serial.print(quat[2]);
-  Serial.print("  ");
-  Serial.print(quat[3]);
+  Serial.print(pos[1]);
   Serial.println("  ");
-  
 }
