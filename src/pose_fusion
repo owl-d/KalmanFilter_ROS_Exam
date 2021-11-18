@@ -13,7 +13,7 @@ cMPU9250 mpu;
 #define DEBUG_SERIAL Serial
 
 ///////////////////////////////////////
-const uint8_t GOAL_VEL = 10;
+int GOAL_VEL = 0;
 const uint8_t PERIOD = 20;
 double dt = 0.02;
 ///////////////////////////////////////
@@ -21,31 +21,31 @@ double dt = 0.02;
 const uint8_t DXL_DIR_PIN = 84;
 const uint8_t RIGHT_ID = 1;
 const uint8_t LEFT_ID = 2;
-const float DXL_PROTOCOL_VERSION = 2.0;
+const double DXL_PROTOCOL_VERSION = 2.0;
 //HardwareTimer Timer(TIMER_CH1);
-float L_Vel;
-float R_Vel;
-float L_RPM;
-float R_RPM;
+double L_Vel;
+double R_Vel;
+double L_RPM;
+double R_RPM;
 double lin_Vel;
 double lin_Vel_pre = 0;
 double ang_Vel;
 double encoder_yaw = 0;
 double encoder_yaw_q[4];
-float present_Lpos;
-float present_Rpos;
-float new_Lpos;
-float new_Rpos;
-float dif_Lpos;
-float dif_Rpos;
-float dis_L;
-float dis_R;
-float dis = 0;
-float deg = 0;
-float dxl_new_x;
-float dxl_new_y;
-float dxl_x = 0;
-float dxl_y = 0;
+double present_Lpos;
+double present_Rpos;
+double new_Lpos;
+double new_Rpos;
+double dif_Lpos;
+double dif_Rpos;
+double dis_L;
+double dis_R;
+double dis = 0;
+double deg = 0;
+double dxl_new_x;
+double dxl_new_y;
+double dxl_x = 0;
+double dxl_y = 0;
 Dynamixel2Arduino dxl(DXL_SERIAL, DXL_DIR_PIN);
 using namespace ControlTableItem;
 
@@ -210,8 +210,8 @@ void setup()
   dxl.torqueOn(RIGHT_ID);
   dxl.writeControlTableItem(DRIVE_MODE, LEFT_ID, 0);
   dxl.writeControlTableItem(DRIVE_MODE, RIGHT_ID, 0);
-  dxl.setGoalVelocity(LEFT_ID, 10);
-  dxl.setGoalVelocity(RIGHT_ID, 10);
+  dxl.setGoalVelocity(LEFT_ID, GOAL_VEL);
+  dxl.setGoalVelocity(RIGHT_ID, GOAL_VEL);
   new_Lpos = dxl.getPresentPosition(LEFT_ID);
   new_Rpos = dxl.getPresentPosition(RIGHT_ID);
 }
@@ -535,9 +535,4 @@ void coordinate()
   imu_pub.publish(&imu_msg);
   pose_pub.publish(&pose_msg);
   tfbroadcaster.sendTransform(tfs_msg);
-
-  Serial.print(pos[0]);
-  Serial.print("  ");
-  Serial.print(pos[1]);
-  Serial.println("  ");
 }
