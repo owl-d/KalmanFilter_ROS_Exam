@@ -28,7 +28,6 @@ double R_Vel;
 double L_RPM;
 double R_RPM;
 double lin_Vel;
-double lin_Vel_pre = 0;
 double ang_Vel;
 double encoder_yaw = 0;
 double encoder_yaw_q[4];
@@ -53,8 +52,10 @@ double gyro[3];
 double acc[3];
 double mag[3];
 double quat[4];
-double pos[4] = {0, 0, 0, 0};
-double posp[4];
+double posx[3] = {0, 0, 0};
+double posy[3] = {0, 0, 0};
+double pospx[3];
+double pospy[3];
 double H[12];
 double H2[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 double H3[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
@@ -63,11 +64,13 @@ double Q3[9] = {1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6};
 double R[9] = {2, 0, 0, 0, 2, 0, 0, 0, 2};
 double V[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 double P[16] = {0.001, 0, 0, 0, 0, 0.001, 0, 0, 0, 0, 0.001, 0, 0, 0, 0, 0.001};
-double P3[9];
+double P3x[9];
+double P3y[9];
 double A[16];
 double K[12];
 double K2[16];
-double K3[9];
+double K3x[9];
+double K3y[9];
 double x[4] = {1, 0, 0, 0};
 double xp[4];
 double z1[3];
@@ -440,22 +443,21 @@ void coordinate()
   local_p_y += local_v_y*dt; //position
 
 
-  //Position Priori System Estimate : Encoder
+  //Position X Priori System Estimate : Encoder
   double A3[9] = {1, dt, dt*dt/2, 0 , 1, dt, 0, 0, 1};
-  matrix_dot(posp, A3, pos, 3, 3, 1);
+  matrix_dot(pospx, A3, posx, 3, 3, 1);
   double Pp_a3[9];
-  matrix_dot(Pp_a3, A3, P3, 3, 3, 3);
+  matrix_dot(Pp_a3, A3, P3x, 3, 3, 3);
   double A_T3[9] = {A3[0], A3[3], A3[6], A3[1], A3[4], A3[7], A3[2], A3[5], A3[8]};
   double Pp_A3[9];
   matrix_dot(Pp_A3, Pp_a3, A_T3, 3, 3, 3);
   double Pp3[9] = {Pp_A3[0]+Q3[0], Pp_A3[1]+Q3[1], Pp_A3[2]+Q3[2], Pp_A3[3]+Q3[3], Pp_A3[4]+Q3[4], Pp_A3[5]+Q3[5], Pp_A3[6]+Q3[6], Pp_A3[7]+Q3[7], Pp_A3[8]+Q3[8]};
   
-  //Position Correction Stage : with IMU position
-  z3[0] = dxl_x - posp[0];
-  z3[1] = lin_Vel*cos(encoder_yaw) - posp[2];
-  z3[2] = local_acc_x - posp[3];
-  lin_Vel_pre = lin_Vel;
-
+  //Position X Correction Stage : with IMU position
+  z3[0] = dxl_x - pospx[0];
+  z3[1] = lin_Vel*cos(encoder_yaw) - pospx[2];
+  z3[2] = local_acc_x - pospx[3];
+  
   double Pp_h3[9];
   matrix_dot(Pp_h3, H3, Pp3, 3, 3, 3);
   double Pp_H3[3];
@@ -473,20 +475,65 @@ void coordinate()
     
   double H_ti3[9];
   matrix_dot(H_ti3, Pp3, H3, 3, 3, 3);
-  matrix_dot(K3, H_ti3, inverse_temp3, 3, 3, 3);
+  matrix_dot(K3x, H_ti3, inverse_temp3, 3, 3, 3);
     
   double qe3[3];
-  matrix_dot(qe3, K3, z3, 3, 3, 1);
-  pos[0] = posp[0] + qe3[0];
-  pos[1] = posp[1] + qe3[1];
-  pos[2] = posp[2] + qe3[2];
+  matrix_dot(qe3, K3x, z3, 3, 3, 1);
+  posx[0] = pospx[0] + qe3[0];
+  posx[1] = pospx[1] + qe3[1];
+  posx[2] = pospx[2] + qe3[2];
 
   double K_h3[9];
-  matrix_dot(K_h3, K3, H3, 3, 3, 3);
-  double I_Kh3[9] = { 1 - K_h3[0], -K_h3[1], -K_h3[2], -K_h3[3], 1-K_h3[4], K_h3[5], -K_h3[6], -K_h3[7], 1-K_h3[8]};
+  matrix_dot(K_h3, K3x, H3, 3, 3, 3);
+  double I_Kh3[9] = { 1 - K_h3[0], -K_h3[1], -K_h3[2], -K_h3[3], 1-K_h3[4], -K_h3[5], -K_h3[6], -K_h3[7], 1-K_h3[8]};
+  matrix_dot(P3x, I_Kh3, Pp3, 3, 3, 3);
+
+  //Position Y Priori System Estimate : Encoder
+  matrix_dot(pospy, A3, posy, 3, 3, 1);
+  matrix_dot(Pp_a3, A3, P3y, 3, 3, 3);
+  matrix_dot(Pp_A3, Pp_a3, A_T3, 3, 3, 3);
+  Pp3[0] = Pp_A3[0]+Q3[0];
+  Pp3[1] = Pp_A3[1]+Q3[1];
+  Pp3[2] = Pp_A3[2]+Q3[2];
+  Pp3[3] = Pp_A3[3]+Q3[3];
+  Pp3[4] = Pp_A3[4]+Q3[4];
+  Pp3[5] = Pp_A3[5]+Q3[5];
+  Pp3[6] = Pp_A3[6]+Q3[6];
+  Pp3[7] = Pp_A3[7]+Q3[7];
+  Pp3[8] = Pp_A3[8]+Q3[8];
+  
+  //Position Y Correction Stage : with IMU position
+  z3[0] = dxl_y - pospy[0];
+  z3[1] = lin_Vel*sin(encoder_yaw) - pospy[2];
+  z3[2] = local_acc_y - pospy[3];
+  
+  matrix_dot(Pp_h3, H3, Pp3, 3, 3, 3);
+  matrix_dot(Pp_H3, Pp_h3, H3, 3, 3, 3);
     
-  double P3[9];
-  matrix_dot(P3, I_Kh3, Pp3, 3, 3, 3);
+  double temp4[9] = {Pp_H3[0]+R_V3[0], Pp_H3[1]+R_V3[1], Pp_H3[2]+R_V3[2], Pp_H3[3]+R_V3[3], Pp_H3[4]+R_V3[4], Pp_H3[5]+R_V3[5], Pp_H3[6]+R_V3[6], Pp_H3[7]+R_V3[7], Pp_H3[8]+R_V3[8]};
+
+  double inverse_temp4[9];
+  InverseMatrix3(temp4, inverse_temp4);
+    
+  matrix_dot(H_ti3, Pp3, H3, 3, 3, 3);
+  matrix_dot(K3y, H_ti3, inverse_temp4, 3, 3, 3);
+    
+  matrix_dot(qe3, K3y, z3, 3, 3, 1);
+  posy[0] = pospy[0] + qe3[0];
+  posy[1] = pospy[1] + qe3[1];
+  posy[2] = pospy[2] + qe3[2];
+
+  matrix_dot(K_h3, K3y, H3, 3, 3, 3);
+  I_Kh3[0] = 1 - K_h3[0];
+  I_Kh3[1] = -K_h3[1];
+  I_Kh3[2] = -K_h3[2];
+  I_Kh3[9] = -K_h3[3];
+  I_Kh3[9] = 1- K_h3[4];
+  I_Kh3[9] = -K_h3[5];
+  I_Kh3[9] = -K_h3[6];
+  I_Kh3[9] = -K_h3[7];
+  I_Kh3[9] = 1- K_h3[8];
+  matrix_dot(P3y, I_Kh3, Pp3, 3, 3, 3);
 
 
   //Publish
@@ -505,8 +552,8 @@ void coordinate()
 
   pose_msg.header.stamp = nh.now();
   pose_msg.header.frame_id = "map";
-  pose_msg.pose.position.x = pos[0];
-  pose_msg.pose.position.y = pos[1];
+  pose_msg.pose.position.x = posx[0];
+  pose_msg.pose.position.y = posy[0];
   pose_msg.pose.position.z = 0;
   pose_msg.pose.orientation.w = quat[0];
   pose_msg.pose.orientation.x = quat[1];
@@ -535,5 +582,9 @@ void coordinate()
   Serial.print(quat[2]);
   Serial.print("  ");
   Serial.print(quat[3]);
+  Serial.println("  ");
+  Serial.print(posx[0]);
+  Serial.print("  ");
+  Serial.print(posy[0]);
   Serial.println("  ");
 }
